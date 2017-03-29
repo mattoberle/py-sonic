@@ -2668,10 +2668,11 @@ class Connection(object):
         """
         Given a dictionary, it cleans out all the values set to None
         """
-        for k, v in d.items():
-            if v is None:
-                del d[k]
-        return d
+        query_dict = dict(
+            (k, v) for k, v in d.items()
+            if v is not None
+        )
+        return query_dict
 
     def _getBaseQdict(self):
         qdict = {
