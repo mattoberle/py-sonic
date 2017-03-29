@@ -2717,11 +2717,12 @@ class Connection(object):
         qdict.update(query)
         url = '%s:%d/%s/%s' % (self._baseUrl, self._port, self._serverPath,
                                viewName)
+
         data = StringIO()
         data.write(urlencode(qdict))
         for i in alist:
             data.write('&%s' % urlencode({listName: i}))
-        req = urllib2.Request(url, data.getvalue())
+        req = urllib2.Request(url, data.getvalue().encode('utf-8'))
 
         if self._useGET:
             url += '?%s' % data.getvalue()
