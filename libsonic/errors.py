@@ -39,17 +39,18 @@ class DataNotFoundError(SonicError):
 class ArgumentError(SonicError):
     pass
 
+
 # This maps the error code numbers from the Subsonic server to their
 # appropriate Exceptions
 ERR_CODE_MAP = {
-    0: SonicError ,
-    10: ParameterError ,
-    20: VersionError ,
-    30: VersionError ,
-    40: CredentialError ,
-    50: AuthError ,
-    60: LicenseError ,
-    70: DataNotFoundError ,
+    0: SonicError,
+    10: ParameterError,
+    20: VersionError,
+    30: VersionError,
+    40: CredentialError,
+    50: AuthError,
+    60: LicenseError,
+    70: DataNotFoundError,
 }
 
 def getExcByCode(code):
