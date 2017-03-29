@@ -14,13 +14,37 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with py-sonic.  If not, see <http://www.gnu.org/licenses/>
 """
-
-from urllib import urlencode
-from cStringIO import StringIO
-from libsonic.errors import *
+import json
+import logging
+import os
+import socket
+import ssl
+import sys
+try:
+    from cStringIO import StringIO
+except ImportError:
+    from io import StringIO
+try:
+    import httplib
+except ImportError:
+    import http.client as httplib
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
+try:
+    import urllib2
+except ImportError:
+    import urllib.request as urllib2
 from netrc import netrc
 from hashlib import md5
-import json, urllib2, httplib, logging, socket, ssl, sys, os
+
+from libsonic.errors import ArgumentError, CredentialError, getExcByCode
+
+try:
+    long
+except NameError:
+    long = int
 
 API_VERSION = '1.14.0'
 
