@@ -14,6 +14,7 @@ GNU General Public License for more details.
 You should have received a copy of the GNU General Public License
 along with py-sonic.  If not, see <http://www.gnu.org/licenses/>
 """
+from __future__ import unicode_literals
 import json
 import logging
 import os
@@ -2686,7 +2687,7 @@ class Connection(object):
             qdict['p'] = 'enc:%s' % self._hexEnc(self._rawPass)
         else:
             salt = self._getSalt()
-            token = md5(self._rawPass + salt).hexdigest()
+            token = md5((self._rawPass + salt).encode('utf-8')).hexdigest()
             qdict.update({
                 's': salt,
                 't': token,
@@ -2699,7 +2700,7 @@ class Connection(object):
         qdict.update(query)
         url = '%s:%d/%s/%s' % (self._baseUrl, self._port, self._serverPath,
                                viewName)
-        req = urllib2.Request(url, urlencode(qdict))
+        req = urllib2.Request(url, urlencode(qdict).encode('utf-8'))
 
         if self._useGET:
             url += '?%s' % urlencode(qdict)
