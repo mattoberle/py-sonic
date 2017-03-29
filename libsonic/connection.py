@@ -50,6 +50,12 @@ API_VERSION = '1.14.0'
 
 logger = logging.getLogger(__name__)
 
+def force_list(iterable):
+    if isinstance(iterable, list):
+        return iterable
+    else:
+        return [iterable]
+
 class HTTPSConnectionChain(httplib.HTTPSConnection):
     _preferred_ssl_protos = sorted([p for p in dir(ssl)
                                    if p.startswith('PROTOCOL_')],
@@ -1442,7 +1448,7 @@ class Connection(object):
         req = None
         if action == 'add':
             # We have to deal with the sids
-            if not (isinstance(sids, list) or isinstance(sids, tuple)):
+            if not isinstance(sids, (list, tuple)):
                 raise ArgumentError('If you are adding songs, "sids" must '
                                     'be a list or tuple!')
             req = self._getRequestWithList(viewName, 'id', sids, q)
@@ -1996,17 +2002,13 @@ class Connection(object):
         methodName = 'updatePlaylist'
         viewName = '%s.view' % methodName
 
-        if not isinstance(songIdsToAdd, list) or isinstance(songIdsToAdd,
-                tuple):
         q = self._getQueryDict({
             'playlistId': lid,
             'name': name,
             'comment': comment
         })
-            songIdsToAdd = [songIdsToAdd]
-        if not isinstance(songIndexesToRemove, list) or isinstance(
-                songIndexesToRemove, tuple):
-            songIndexesToRemove = [songIndexesToRemove]
+        songIdsToAdd = force_list(songIdsToAdd)
+        songIndexesToRemove = force_list(songIndexesToRemove)
         listMap = {
             'songIdToAdd': songIdsToAdd,
             'songIndexToRemove': songIndexesToRemove
@@ -2063,12 +2065,9 @@ class Connection(object):
         methodName = 'star'
         viewName = '%s.view' % methodName
 
-        if not isinstance(sids, list) or isinstance(sids, tuple):
-            sids = [sids]
-        if not isinstance(albumIds, list) or isinstance(albumIds, tuple):
-            albumIds = [albumIds]
-        if not isinstance(artistIds, list) or isinstance(artistIds, tuple):
-            artistIds = [artistIds]
+        sids = force_list(sids)
+        albumIds = force_list(albumIds)
+        artistIds = force_list(artistIds)
         listMap = {
             'id': sids,
             'albumId': albumIds,
@@ -2101,12 +2100,9 @@ class Connection(object):
         methodName = 'unstar'
         viewName = '%s.view' % methodName
 
-        if not isinstance(sids, list) or isinstance(sids, tuple):
-            sids = [sids]
-        if not isinstance(albumIds, list) or isinstance(albumIds, tuple):
-            albumIds = [albumIds]
-        if not isinstance(artistIds, list) or isinstance(artistIds, tuple):
-            artistIds = [artistIds]
+        sids = force_list(sids)
+        albumIds = force_list(albumIds)
+        artistIds = force_list(artistIds)
         listMap = {
             'id': sids,
             'albumId': albumIds,
