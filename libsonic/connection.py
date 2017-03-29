@@ -17,7 +17,6 @@ along with py-sonic.  If not, see <http://www.gnu.org/licenses/>
 
 from urllib import urlencode
 from .errors import *
-from pprint import pprint
 from cStringIO import StringIO
 from netrc import netrc
 from hashlib import md5
