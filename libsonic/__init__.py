@@ -27,6 +27,6 @@ print conn.ping()
 
 """
 
-from connection import *
+from libsonic.connection import *
 
 __version__ = '0.6.2'

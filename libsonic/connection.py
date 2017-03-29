@@ -16,8 +16,8 @@ along with py-sonic.  If not, see <http://www.gnu.org/licenses/>
 """
 
 from urllib import urlencode
-from .errors import *
 from cStringIO import StringIO
+from libsonic.errors import *
 from netrc import netrc
 from hashlib import md5
 import json, urllib2, httplib, logging, socket, ssl, sys, os
