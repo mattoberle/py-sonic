@@ -2746,10 +2746,10 @@ class Connection(object):
                                viewName)
         data = StringIO()
         data.write(urlencode(qdict))
-        for k, l in listMap.iteritems():
+        for k, l in listMap.items():
             for i in l:
                 data.write('&%s' % urlencode({k: i}))
-        req = urllib2.Request(url, data.getvalue())
+        req = urllib2.Request(url, data.getvalue().encode('utf-8'))
 
         if self._useGET:
             url += '?%s' % data.getvalue()
@@ -2760,7 +2760,7 @@ class Connection(object):
     def _doInfoReq(self, req):
         # Returns a parsed dictionary version of the result
         res = self._opener.open(req)
-        dres = json.loads(res.read())
+        dres = json.loads(res.read().decode())
         return dres['subsonic-response']
 
     def _doBinReq(self, req):
