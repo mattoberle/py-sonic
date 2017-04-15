@@ -1,0 +1,255 @@
+#!/usr/bin/env python
+from __future__ import unicode_literals
+from datetime import datetime, timedelta
+from io import BytesIO
+import json
+from operator import itemgetter
+import os
+import shutil
+try:
+    from urllib import urlencode
+except ImportError:
+    from urllib.parse import urlencode
+
+import boto3
+from botocore.client import ClientError
+
+import libsonic
+from libsonic.config import settings
+
+client = libsonic.Connection(
+    settings['default']['SUBSONIC_URL'],
+    settings['default']['SUBSONIC_USER'],
+    settings['default']['SUBSONIC_PASS'],
+    settings['default']['SUBSONIC_PORT']
+)
+
+class Playlist:
+    def __init__(self, name):
+        self.name = name
+        self.id = self._get_playlist_id(name)
+        self.songs, self.meta = self._get_playlist_songs(self.id)
+
+    def _create_playlist(self, name):
+        resp = client.createPlaylist(name=name)
+        return resp['playlist']['id']
+
+    def _get_playlist_id(self, name):
+        playlist_id_map = self._get_playlist_name_id_map()
+        try:
+            playlist_id = playlist_id_map[name]
+        except KeyError:
+            playlist_id = self._create_playlist(name)
+        return playlist_id
+
+    def _get_playlist_name_id_map(self):
+        resp = client.getPlaylists()
+        playlists = resp['playlists']['playlist']
+        playlist_id_map = dict((d['name'], d['id']) for d in playlists)
+        return playlist_id_map
+
+    def _get_playlist_songs(self, pid):
+        resp = client.getPlaylist(pid=pid)
+        songs = []
+        meta = {}
+        for i, song in enumerate(resp['playlist'].get('entry', [])):
+            songs.append(song['id'])
+            meta[song['id']] = {
+                'path': song['path'],
+                'index': i
+            }
+        return songs, meta
+
+    def trash(self):
+        songs_sorted_by_index = sorted(self.meta.values(),
+                                       key=itemgetter('index'),
+                                       reverse=True)
+        for song in songs_sorted_by_index:
+            path = song['path']
+            index = song['index']
+            source = os.path.join(settings['default']['SUBSONIC_MUSIC_DIR'], path)
+            dest = os.path.join(settings['default']['SUBSONIC_TRASH_DIR'], path + '.del')
+            dest_dir = os.path.dirname(dest)
+            os.makedirs(dest_dir, exist_ok=True)
+            shutil.move(source, dest)
+            client.updatePlaylist(self.id, songIndexesToRemove=[index])
+        self.songs, self.meta = self._get_playlist_songs(self.id)
+            
+class Album:
+    def __init__(self, meta, delete_playlist=Playlist, save_playlist=Playlist):
+        self._delete_playlist = delete_playlist
+        self._save_playlist = save_playlist
+        self.id = meta['id']
+        self.added = meta['created']
+
+        self.songs, self.artist, self.name, self.year, self.starred = self._get_album_songs()
+        self.song_count = len(self.songs)
+        self.link = self._get_album_link()
+        self.delete_link = self._get_playlist_link(self._delete_playlist)
+        self.save_link = self._get_playlist_link(self._save_playlist)
+        self.edit_link = self._get_edit_link()
+        self.html_msg = (
+            '<p>'
+            '<a href="{0.link}">{0.artist} - {0.name} ({0.year})</a><br>'
+            '[Tracks: {0.song_count}] [Added: {0.added}]<br>'
+            '<a href="{0.delete_link}">Delete</a> '
+            '<a href="{0.edit_link}">Edit</a> '
+            '<a href="{0.save_link}">Save</a><br>'
+            '</p>'.format(self)
+        )
+        self.text_msg = (
+            '{0.artist} - {0.name} ({0.year})\n'
+            '[Tracks: {0.song_count}] [Added: {0.added}\n'
+            'Link: {0.link}]\n'
+            'Delete: {0.delete_link}\n'
+            'Save: {0.save_link}\n'
+            'Edit: {0.edit_link}\n'
+            '\n'.format(self)
+        )
+
+    def _get_album_link(self):
+        expires = (datetime.now() - timedelta(days=30)).strftime('%s')
+        resp = client.createShare([self.id], expires=expires)
+        link = resp['shares']['share'][0]['url']
+        return link
+
+    def _get_edit_link(self):
+        template = '{}:{}/editTags.view?id={}'
+        link = template.format(client._baseUrl, client.port, self.id)
+        return link
+
+    def _get_playlist_link(self, playlist):
+        template = '{}:{}/{}/updatePlaylist?{}&playlistId={}&{}'
+        qdict = client._getBaseQdict()
+        song_ids_to_add = '&'.join(['songIdToAdd={}'.format(s)
+                                    for s in self.songs
+                                    if s not in playlist.songs])
+        link = template.format(client._baseUrl, client.port,
+                               client._serverPath, urlencode(qdict),
+                               playlist.id, song_ids_to_add)
+        return link
+
+    def _get_album_songs(self):
+        resp = client.getMusicDirectory(self.id)
+        songs = []
+        artists = []
+        albums = []
+        years = []
+        starred = False
+        for song in resp['directory']['child']:
+            songs.append(song['id'])
+            artists.append(song.get('artist'))
+            albums.append(song.get('album'))
+            years.append(song.get('year'))
+            if song.get('starred'):
+                starred = True
+        unique_years = list(set(filter(None, years)))
+        unique_artists = list(set(filter(None, artists)))
+        unique_albums = list(set(filter(None, albums)))
+
+        if len(unique_artists) == 1:
+            artist = unique_artists[0]
+        else:
+            artist = 'Various'
+
+        if len(unique_albums) == 1:
+            album = unique_albums[0]
+        else:
+            album = 'Uknown album'
+
+        if len(unique_years) == 1:
+            year = unique_years[0]
+        else:
+            year = 'Unknown year'
+
+        return songs, artist, album, year, starred
+
+
+class Cache:
+    def __init__(self, bucket):
+        s3 = boto3.resource('s3')
+        self.bucket = s3.Bucket(bucket)
+        self.key = 'processed.json'
+        try:
+            self.bucket.load()
+        except ClientError:
+            self.bucket.create()
+        self.data = self._download()
+
+    def _download(self):
+        f = BytesIO()
+        try:
+            self.bucket.download_fileobj(self.key, f)
+            f.seek(0)
+            data = json.loads(f.read().decode())
+        except ClientError:
+            data = []
+        return data
+
+    def _upload(self):
+        data = list(set(self.data))
+        body = json.dumps(data).encode('utf-8')
+        self.bucket.put_object(
+            Body=body,
+            ContentEncoding='utf-8',
+            ContentType='application/json',
+            Key=self.key
+        )
+
+    def add(self, item):
+        self.data.append(item)
+
+    def remove(self, item):
+        self.data.remove(item)
+
+    def save(self):
+        self._upload()
+
+
+if __name__ == '__main__':
+    ses = boto3.client('ses')
+
+    delete_playlist = Playlist(settings['default']['TO_DELETE_PLAYLIST'])
+    save_playlist = Playlist(settings['default']['TO_SAVE_PLAYLIST'])
+    cache = Cache(settings['default']['S3_CACHE_BUCKET'])
+    COUNT = 25
+
+    albums = []
+    while len(albums) < COUNT:
+        size = COUNT - len(albums)
+        resp = client.getAlbumList(ltype='random', size=size)
+        for meta in resp['albumList']['album']:
+            if meta['id'] not in cache.data:
+                album = Album(meta, delete_playlist, save_playlist)
+                # do not send emails about albums with starred items
+                if not album.starred:
+                    albums.append(album)
+                cache.add(meta['id'])
+
+    text = '\n'.join([album.text_msg for album in albums])
+    html_body = '\n'.join([album.html_msg for album in albums])
+    html = '<html><head></head><body>{}</body></html>'.format(html_body)
+
+    resp = ses.send_email(
+        Source='matt.r.oberle@gmail.com',
+        Destination={
+            'ToAddresses': [
+                'matt.r.oberle@gmail.com'
+            ]
+        },
+        Message={
+            'Subject': {
+                'Data': datetime.now().strftime('Albums to Process %Y-%m-%d')
+            },
+            'Body': {
+                'Text': {
+                    'Data': text
+                },
+                'Html': {
+                    'Data': html
+                }
+            }
+        }
+    )
+    cache.save()
+    delete_playlist.trash() 

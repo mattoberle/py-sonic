@@ -1,4 +1,6 @@
+*.egg-info
 *.pyc
+.venv
 test.py
 MANIFEST
 dist
