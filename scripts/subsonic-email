@@ -24,6 +24,7 @@ client = libsonic.Connection(
     settings['default']['SUBSONIC_PORT']
 )
 
+
 class Playlist:
     def __init__(self, name):
         self.name = name
@@ -55,7 +56,9 @@ class Playlist:
         for i, song in enumerate(resp['playlist'].get('entry', [])):
             songs.append(song['id'])
             meta[song['id']] = {
+                'id': song['id'],
                 'path': song['path'],
+                'parent': song['parent'],
                 'index': i
             }
         return songs, meta
@@ -74,7 +77,21 @@ class Playlist:
             shutil.move(source, dest)
             client.updatePlaylist(self.id, songIndexesToRemove=[index])
         self.songs, self.meta = self._get_playlist_songs(self.id)
-            
+
+    def remove_albums_with_ratings(self):
+        songs_to_remove = []
+        songs_grouped_by_directory = {d['parent']: [] for d in self.meta.values()}
+        for d in self.meta.values():
+            songs_grouped_by_directory[d['parent']].append(d)
+        for parent_directory_id, directory in songs_grouped_by_directory.items():
+            resp = client.getMusicDirectory(parent_directory_id)
+            for song in resp['directory']['child']:
+                if song.get('starred'):
+                    songs_to_remove.extend([d['index'] for d in directory])
+                    break
+        client.updatePlaylist(self.id, songIndexesToRemove=songs_to_remove)
+
+
 class Album:
     def __init__(self, meta, delete_playlist=Playlist, save_playlist=Playlist):
         self._delete_playlist = delete_playlist
@@ -252,4 +269,5 @@ if __name__ == '__main__':
         }
     )
     cache.save()
-    delete_playlist.trash() 
+    delete_playlist.trash()
+    save_playlist.remove_albums_with_ratings()
