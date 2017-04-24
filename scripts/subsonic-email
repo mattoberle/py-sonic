@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 from __future__ import unicode_literals
+from argparse import ArgumentParser
 from datetime import datetime, timedelta
 from io import BytesIO
 import json
@@ -224,50 +225,57 @@ class Cache:
 
 
 if __name__ == '__main__':
-    ses = boto3.client('ses')
+    parser = ArgumentParser()
+    arg_group = parser.add_mutually_exclusive_group()
+    arg_group.add_argument('--email-only', action='store_true')
+    arg_group.add_argument('--cleanup-only', action='store_true')
+    args = parser.parse_args()
 
     delete_playlist = Playlist(settings['default']['TO_DELETE_PLAYLIST'])
     save_playlist = Playlist(settings['default']['TO_SAVE_PLAYLIST'])
-    cache = Cache(settings['default']['S3_CACHE_BUCKET'])
     COUNT = 25
 
-    albums = []
-    while len(albums) < COUNT:
-        size = COUNT - len(albums)
-        resp = client.getAlbumList(ltype='random', size=size)
-        for meta in resp['albumList']['album']:
-            if meta['id'] not in cache.data:
-                album = Album(meta, delete_playlist, save_playlist)
-                # do not send emails about albums with starred items
-                if not album.starred:
-                    albums.append(album)
-                cache.add(meta['id'])
+    if not args.cleanup_only:
+        ses = boto3.client('ses')
+        cache = Cache(settings['default']['S3_CACHE_BUCKET'])
+        albums = []
+        while len(albums) < COUNT:
+            size = COUNT - len(albums)
+            resp = client.getAlbumList(ltype='random', size=size)
+            for meta in resp['albumList']['album']:
+                if meta['id'] not in cache.data:
+                    album = Album(meta, delete_playlist, save_playlist)
+                    # do not send emails about albums with starred items
+                    if not album.starred:
+                        albums.append(album)
+                    cache.add(meta['id'])
 
-    text = '\n'.join([album.text_msg for album in albums])
-    html_body = '\n'.join([album.html_msg for album in albums])
-    html = '<html><head></head><body>{}</body></html>'.format(html_body)
+        text = '\n'.join([album.text_msg for album in albums])
+        html_body = '\n'.join([album.html_msg for album in albums])
+        html = '<html><head></head><body>{}</body></html>'.format(html_body)
 
-    resp = ses.send_email(
-        Source='matt.r.oberle@gmail.com',
-        Destination={
-            'ToAddresses': [
-                'matt.r.oberle@gmail.com'
-            ]
-        },
-        Message={
-            'Subject': {
-                'Data': datetime.now().strftime('Albums to Process %Y-%m-%d')
+        resp = ses.send_email(
+            Source='matt.r.oberle@gmail.com',
+            Destination={
+                'ToAddresses': [
+                    'matt.r.oberle@gmail.com'
+                ]
             },
-            'Body': {
-                'Text': {
-                    'Data': text
+            Message={
+                'Subject': {
+                    'Data': datetime.now().strftime('Albums to Process %Y-%m-%d')
                 },
-                'Html': {
-                    'Data': html
+                'Body': {
+                    'Text': {
+                        'Data': text
+                    },
+                    'Html': {
+                        'Data': html
+                    }
                 }
             }
-        }
-    )
-    cache.save()
-    delete_playlist.trash()
-    save_playlist.remove_albums_with_ratings()
+        )
+        cache.save()
+    if not args.email_only:
+        delete_playlist.trash()
+        save_playlist.remove_albums_with_ratings()
